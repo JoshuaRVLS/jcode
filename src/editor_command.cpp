@@ -1,0 +1,166 @@
+#include "editor.h"
+#include <algorithm>
+#include <cctype>
+
+void Editor::toggle_command_palette() {
+    show_command_palette = !show_command_palette;
+    if (show_command_palette) {
+        command_palette_query = "";
+        refresh_command_palette();
+    }
+}
+
+void Editor::refresh_command_palette() {
+    command_palette_results.clear();
+    std::string query = command_palette_query;
+    std::transform(query.begin(), query.end(), query.begin(), ::tolower);
+    
+    std::vector<std::string> commands = {
+        "New File", "Open File", "Save", "Save As", "Close File",
+        "Toggle Explorer", "Toggle Minimap", "Toggle Search",
+        "Split Horizontal", "Split Vertical", "Close Pane",
+        "Next Pane", "Previous Pane", "Quit"
+    };
+    
+    for (const auto& cmd : commands) {
+        std::string cmd_lower = cmd;
+        std::transform(cmd_lower.begin(), cmd_lower.end(), cmd_lower.begin(), ::tolower);
+        if (query.empty() || cmd_lower.find(query) != std::string::npos) {
+            command_palette_results.push_back(cmd);
+        }
+    }
+    
+    if (command_palette_selected >= (int)command_palette_results.size()) {
+        command_palette_selected = 0;
+    }
+}
+
+void Editor::execute_command(const std::string& cmd) {
+    if (cmd == "New File") {
+        create_new_buffer();
+    } else if (cmd == "Open File") {
+        message = "Use file explorer or command line argument";
+    } else if (cmd == "Save") {
+        save_file();
+    } else if (cmd == "Save As") {
+        save_file_as();
+    } else if (cmd == "Close File") {
+        close_buffer();
+    } else if (cmd == "Toggle Explorer") {
+        toggle_explorer();
+    } else if (cmd == "Toggle Minimap") {
+        toggle_minimap();
+    } else if (cmd == "Toggle Search") {
+        toggle_search();
+    } else if (cmd == "Split Horizontal") {
+        split_pane_horizontal();
+    } else if (cmd == "Split Vertical") {
+        split_pane_vertical();
+    } else if (cmd == "Close Pane") {
+        close_pane();
+    } else if (cmd == "Next Pane") {
+        next_pane();
+    } else if (cmd == "Previous Pane") {
+        prev_pane();
+    } else if (cmd == "Quit") {
+        running = false;
+    }
+}
+
+void Editor::handle_command_palette(int ch) {
+    if (ch == 27) {
+        show_command_palette = false;
+        command_palette_query.clear();
+        needs_redraw = true;
+    } else if (ch == '\n' || ch == 13) {
+        if (!command_palette_results.empty()) {
+            execute_command(command_palette_results[command_palette_selected]);
+            show_command_palette = false;
+            command_palette_query.clear();
+            needs_redraw = true;
+        }
+    } else if (ch == 1008 || ch == 'k') {
+        if (command_palette_selected > 0) command_palette_selected--;
+        needs_redraw = true;
+    } else if (ch == 1009 || ch == 'j') {
+        if (command_palette_selected < (int)command_palette_results.size() - 1) command_palette_selected++;
+        needs_redraw = true;
+    } else if (ch == 127 || ch == 8) {
+        if (!command_palette_query.empty()) {
+            command_palette_query.pop_back();
+            refresh_command_palette();
+            needs_redraw = true;
+        }
+    } else if (ch >= 32 && ch < 127) {
+        command_palette_query += ch;
+        refresh_command_palette();
+        needs_redraw = true;
+    }
+}
+
+void Editor::handle_search_panel(int ch) {
+    if (ch == 27) {
+        show_search = false;
+        search_query.clear();
+        needs_redraw = true;
+    } else if (ch == '\n' || ch == 13) {
+        perform_search();
+        needs_redraw = true;
+    } else if (ch == 127 || ch == 8) {
+        if (!search_query.empty()) {
+            search_query.pop_back();
+            perform_search();
+            needs_redraw = true;
+        }
+    } else if (ch == 'n' || ch == 1010) {
+        find_next();
+        needs_redraw = true;
+    } else if (ch == 'N' || ch == 1011) {
+        find_prev();
+        needs_redraw = true;
+    } else if (ch >= 32 && ch < 127) {
+        search_query += ch;
+        perform_search();
+        needs_redraw = true;
+    }
+}
+
+void Editor::toggle_minimap() {
+    show_minimap = !show_minimap;
+}
+
+void Editor::jump_to_matching_bracket() {
+    auto& buf = get_buffer();
+    if (buf.cursor.y < 0 || buf.cursor.y >= (int)buf.lines.size()) return;
+    if (buf.cursor.x < 0 || buf.cursor.x >= (int)buf.lines[buf.cursor.y].length()) return;
+    
+    char ch = buf.lines[buf.cursor.y][buf.cursor.x];
+    int match = -1;
+    
+    if (ch == '(') match = EditorFeatures::find_matching_bracket(buf.lines, buf.cursor.y, buf.cursor.x, '(', ')');
+    else if (ch == ')') match = EditorFeatures::find_matching_bracket(buf.lines, buf.cursor.y, buf.cursor.x, '(', ')');
+    else if (ch == '{') match = EditorFeatures::find_matching_bracket(buf.lines, buf.cursor.y, buf.cursor.x, '{', '}');
+    else if (ch == '}') match = EditorFeatures::find_matching_bracket(buf.lines, buf.cursor.y, buf.cursor.x, '{', '}');
+    else if (ch == '[') match = EditorFeatures::find_matching_bracket(buf.lines, buf.cursor.y, buf.cursor.x, '[', ']');
+    else if (ch == ']') match = EditorFeatures::find_matching_bracket(buf.lines, buf.cursor.y, buf.cursor.x, '[', ']');
+    
+    if (match >= 0) {
+        buf.cursor.y = match / 10000;
+        buf.cursor.x = match % 10000;
+        clamp_cursor(get_pane().buffer_id);
+        needs_redraw = true;
+        message = "Jumped to matching bracket";
+    }
+}
+
+void Editor::format_document() {
+    auto& buf = get_buffer();
+    save_state();
+    for (auto& line : buf.lines) {
+        EditorFeatures::format_line(line, tab_size);
+    }
+    buf.modified = true;
+    needs_redraw = true;
+    message = "Formatted document";
+}
+
