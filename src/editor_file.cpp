@@ -4,13 +4,6 @@
 #include <dirent.h>
 
 void Editor::load_file(const std::string& fname) {
-    fs::path p(fname);
-    
-    if (fs::is_directory(p)) {
-        load_directory(fname);
-        return;
-    }
-    
     open_file(fname);
 }
 
@@ -62,22 +55,6 @@ void Editor::create_new_buffer() {
     get_pane().buffer_id = current_buffer;
 }
 
-void Editor::load_directory(const std::string& path) {
-    current_dir = path;
-    file_list.clear();
-    
-    try {
-        file_list.push_back("..");
-        for (const auto& entry : fs::directory_iterator(path)) {
-            file_list.push_back(entry.path().filename().string());
-        }
-        std::sort(file_list.begin() + 1, file_list.end());
-    } catch (...) {
-        message = "Cannot open directory";
-    }
-    
-    explorer_selected = 0;
-}
 
 void Editor::save_file() {
     auto& buf = get_buffer();

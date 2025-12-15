@@ -179,8 +179,12 @@ void Terminal::parse_mouse_event(int ch, MouseEvent& event) {
         int button_code = button & 0x03;
         bool is_motion = (button & 0x20) != 0;
         bool is_press = (button & 0x40) != 0;
+        bool is_wheel = (button >= 64 && button <= 67);
         
-        if (is_motion) {
+        if (is_wheel) {
+            event.pressed = true;
+            event.released = false;
+        } else if (is_motion) {
             event.pressed = false;
             event.released = false;
         } else if (is_press) {

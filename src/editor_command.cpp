@@ -17,7 +17,7 @@ void Editor::refresh_command_palette() {
     
     std::vector<std::string> commands = {
         "New File", "Open File", "Save", "Save As", "Close File",
-        "Toggle Explorer", "Toggle Minimap", "Toggle Search",
+        "Toggle Minimap", "Toggle Search",
         "Split Horizontal", "Split Vertical", "Close Pane",
         "Next Pane", "Previous Pane", "Quit"
     };
@@ -39,15 +39,13 @@ void Editor::execute_command(const std::string& cmd) {
     if (cmd == "New File") {
         create_new_buffer();
     } else if (cmd == "Open File") {
-        message = "Use file explorer or command line argument";
+        message = "Press Space+F to open file finder";
     } else if (cmd == "Save") {
         save_file();
     } else if (cmd == "Save As") {
         save_file_as();
     } else if (cmd == "Close File") {
         close_buffer();
-    } else if (cmd == "Toggle Explorer") {
-        toggle_explorer();
     } else if (cmd == "Toggle Minimap") {
         toggle_minimap();
     } else if (cmd == "Toggle Search") {
@@ -121,6 +119,49 @@ void Editor::handle_search_panel(int ch) {
     } else if (ch >= 32 && ch < 127) {
         search_query += ch;
         perform_search();
+        needs_redraw = true;
+    }
+}
+
+void Editor::handle_telescope(int ch) {
+    if (ch == 27) {
+        telescope.close();
+        waiting_for_space_f = false;
+        needs_redraw = true;
+    } else if (ch == '\n' || ch == 13) {
+        std::string path = telescope.get_selected_path();
+        if (!path.empty()) {
+            std::string ext = get_file_extension(path);
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            
+            if (ext == ".jpg" || ext == ".jpeg" || ext == ".png" || 
+                ext == ".gif" || ext == ".bmp" || ext == ".svg" ||
+                ext == ".webp" || ext == ".ico") {
+                image_viewer.open(path);
+            } else {
+                open_file(path);
+            }
+            telescope.close();
+            waiting_for_space_f = false;
+            needs_redraw = true;
+        }
+    } else if (ch == 1008 || ch == 'k') {
+        telescope.move_up();
+        needs_redraw = true;
+    } else if (ch == 1009 || ch == 'j') {
+        telescope.move_down();
+        needs_redraw = true;
+    } else if (ch == 127 || ch == 8) {
+        std::string q = telescope.get_query();
+        if (!q.empty()) {
+            q.pop_back();
+            telescope.set_query(q);
+            needs_redraw = true;
+        }
+    } else if (ch >= 32 && ch < 127) {
+        std::string q = telescope.get_query();
+        q += ch;
+        telescope.set_query(q);
         needs_redraw = true;
     }
 }

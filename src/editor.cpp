@@ -6,11 +6,7 @@ Editor::Editor() {
     running = true;
     current_pane = 0;
     current_buffer = 0;
-    show_explorer = config.get_bool("show_explorer", true);
-    explorer_focused = false;
-    explorer_width = config.get_int("explorer_width", 25);
-    explorer_selected = 0;
-    current_dir = fs::current_path().string();
+    waiting_for_space_f = false;
     show_minimap = config.get_bool("show_minimap", true);
     minimap_width = config.get_int("minimap_width", 15);
     show_search = false;
@@ -38,7 +34,7 @@ Editor::Editor() {
     
     int h = terminal.get_height();
     int w = terminal.get_width();
-    create_pane(explorer_width, tab_height, w - explorer_width - minimap_width, h - tab_height - status_height, -1);
+    create_pane(0, tab_height, w - minimap_width, h - tab_height - status_height, -1);
     
     FileBuffer fb;
     fb.lines.push_back("");

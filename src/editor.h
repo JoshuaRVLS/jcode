@@ -15,15 +15,16 @@
 #include "ui.h"
 #include "autoclose.h"
 #include "bracket.h"
+#include "telescope.h"
 
 namespace fs = std::filesystem;
 
 enum PanelType {
     PANEL_EDITOR,
-    PANEL_EXPLORER,
     PANEL_MINIMAP,
     PANEL_SEARCH,
-    PANEL_COMMAND_PALETTE
+    PANEL_COMMAND_PALETTE,
+    PANEL_TELESCOPE
 };
 
 enum {
@@ -44,7 +45,10 @@ enum {
     COLOR_IMAGE_BORDER_FG = 7, COLOR_IMAGE_BORDER_BG = 5,
     COLOR_BRACKET1_FG = 1, COLOR_BRACKET2_FG = 2, COLOR_BRACKET3_FG = 3,
     COLOR_BRACKET4_FG = 4, COLOR_BRACKET5_FG = 5, COLOR_BRACKET6_FG = 6,
-    COLOR_BRACKET_MATCH_FG = 3, COLOR_BRACKET_MATCH_BG = 0
+    COLOR_BRACKET_MATCH_FG = 3, COLOR_BRACKET_MATCH_BG = 0,
+    COLOR_TELESCOPE_FG = 7, COLOR_TELESCOPE_BG = 0,
+    COLOR_TELESCOPE_SELECTED_FG = 0, COLOR_TELESCOPE_SELECTED_BG = 6,
+    COLOR_TELESCOPE_PREVIEW_FG = 7, COLOR_TELESCOPE_PREVIEW_BG = 0
 };
 
 struct Cursor {
@@ -115,13 +119,9 @@ private:
     std::vector<std::string> command_palette_results;
     int command_palette_selected;
     
-    // File explorer
-    bool show_explorer;
-    bool explorer_focused;
-    int explorer_width;
-    std::vector<std::string> file_list;
-    int explorer_selected;
-    std::string current_dir;
+    // Telescope finder
+    Telescope telescope;
+    bool waiting_for_space_f;
     
     // Search panel
     bool show_search;
@@ -161,7 +161,7 @@ private:
     void render_tabs();
     void render_panes();
     void render_pane(const SplitPane& pane);
-    void render_explorer(int x, int y, int w, int h);
+    void render_telescope();
     void render_minimap(int x, int y, int w, int h, int buffer_id);
     void render_image_viewer();
     void render_status_line();
@@ -173,6 +173,7 @@ private:
     void handle_input(int ch, bool is_ctrl = false, bool is_shift = false);
     void handle_command_palette(int ch);
     void handle_search_panel(int ch);
+    void handle_telescope(int ch);
     void handle_mouse(void* event);
     
     void move_cursor(int dx, int dy, bool extend_selection = false);
@@ -209,12 +210,6 @@ private:
     void create_new_buffer();
     void save_file();
     void save_file_as();
-    
-    void load_directory(const std::string& path);
-    void toggle_explorer();
-    void explorer_up();
-    void explorer_down();
-    void explorer_open();
     
     void toggle_minimap();
     void toggle_search();

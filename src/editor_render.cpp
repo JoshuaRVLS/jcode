@@ -24,36 +24,36 @@ void Editor::render() {
     
     render_tabs();
     
-    if (show_explorer) {
-        render_explorer(0, tab_height, explorer_width, h - tab_height - status_height);
-    }
-    
     update_pane_layout();
     
-    if (image_viewer.is_active()) {
-        int img_w = w / 2;
-        int editor_w = w - explorer_width - img_w;
-        if (!panes.empty()) {
-            panes[0].w = editor_w;
-        }
-        render_panes();
-        if (image_viewer.is_active()) {
-            render_image_viewer();
-        }
+    if (telescope.is_active()) {
+        render_telescope();
     } else {
-        render_panes();
-        if (show_minimap && !panes.empty()) {
-            int minimap_x = w - minimap_width;
-            render_minimap(minimap_x, tab_height, minimap_width, h - tab_height - status_height, get_pane().buffer_id);
+        if (image_viewer.is_active()) {
+            int img_w = w / 2;
+            int editor_w = w - img_w;
+            if (!panes.empty()) {
+                panes[0].w = editor_w;
+            }
+            render_panes();
+            if (image_viewer.is_active()) {
+                render_image_viewer();
+            }
+        } else {
+            render_panes();
+            if (show_minimap && !panes.empty()) {
+                int minimap_x = w - minimap_width;
+                render_minimap(minimap_x, tab_height, minimap_width, h - tab_height - status_height, get_pane().buffer_id);
+            }
         }
-    }
-    
-    if (show_search) {
-        render_search_panel();
-    }
-    
-    if (show_command_palette) {
-        render_command_palette();
+        
+        if (show_search) {
+            render_search_panel();
+        }
+        
+        if (show_command_palette) {
+            render_command_palette();
+        }
     }
     
     render_status_line();
@@ -111,36 +111,67 @@ void Editor::render_tabs() {
     }
 }
 
-void Editor::render_explorer(int x, int y, int w, int h) {
-    for (int i = 0; i < h; i++) {
-        ui->draw_text(x + w - 1, y + i, "|", COLOR_PANEL_BORDER_FG, COLOR_PANEL_BORDER_BG);
+void Editor::render_telescope() {
+    int h = ui->get_height();
+    int w = ui->get_width();
+    
+    int list_w = w / 2;
+    int preview_w = w - list_w;
+    int list_h = h - 2;
+    
+    ui->fill_rect({0, 0, w, h}, ' ', COLOR_TELESCOPE_BG, COLOR_TELESCOPE_BG);
+    
+    ui->draw_text(1, 0, " FIND FILES ", COLOR_TELESCOPE_FG, COLOR_TELESCOPE_BG);
+    
+    std::string query = telescope.get_query();
+    ui->draw_text(1, 1, "> " + query, COLOR_TELESCOPE_FG, COLOR_TELESCOPE_BG);
+    
+    auto& results = telescope.get_results();
+    int selected = telescope.get_selected_index();
+    int start_idx = std::max(0, selected - (list_h - 3));
+    int end_idx = std::min((int)results.size(), start_idx + list_h - 2);
+    
+    for (int i = start_idx; i < end_idx; i++) {
+        int y = 2 + (i - start_idx);
+        int fg = COLOR_TELESCOPE_FG, bg = COLOR_TELESCOPE_BG;
+        
+        if (i == selected) {
+            fg = COLOR_TELESCOPE_SELECTED_FG;
+            bg = COLOR_TELESCOPE_SELECTED_BG;
+        }
+        
+        std::string icon = results[i].is_directory ? "📁 " : "📄 ";
+        std::string name = results[i].name;
+        if ((int)name.length() > list_w - 5) {
+            name = name.substr(0, list_w - 8) + "...";
+        }
+        
+        ui->draw_text(1, y, icon + name, fg, bg);
     }
-    ui->draw_text(x, y, " EXPLORER ", COLOR_PANEL_BORDER_FG, COLOR_PANEL_BORDER_BG);
     
-    load_directory(current_dir);
-    
-    for (int i = 0; i < h - 1 && i < (int)file_list.size(); i++) {
-        int file_idx = i;
-        int fg = 7, bg = 0;
-        if (file_idx == explorer_selected) {
-            fg = 0;
-            bg = 7;
-        }
+    if (!results.empty() && selected >= 0 && selected < (int)results.size()) {
+        auto preview_lines = telescope.get_preview_lines();
+        int preview_x = list_w;
+        int preview_h = h - 2;
         
-        std::string icon = " ";
-        fs::path p = fs::path(current_dir) / file_list[file_idx];
-        if (fs::is_directory(p)) {
-            icon = "D";
-        } else {
-            icon = "F";
-        }
+        ui->draw_text(preview_x, 0, " PREVIEW ", COLOR_TELESCOPE_FG, COLOR_TELESCOPE_BG);
         
-        std::string display = icon + " " + file_list[file_idx];
-        if ((int)display.length() > w - 3) {
-            display = display.substr(0, w - 6) + "...";
+        std::string path = telescope.get_selected_path();
+        if (!path.empty()) {
+            std::string path_display = path;
+            if ((int)path_display.length() > preview_w - 2) {
+                path_display = "..." + path_display.substr(path_display.length() - preview_w + 5);
+            }
+            ui->draw_text(preview_x + 1, 1, path_display, COLOR_TELESCOPE_PREVIEW_FG, COLOR_TELESCOPE_PREVIEW_BG);
+            
+            for (size_t i = 0; i < preview_lines.size() && i < (size_t)(preview_h - 2); i++) {
+                std::string line = preview_lines[i];
+                if ((int)line.length() > preview_w - 2) {
+                    line = line.substr(0, preview_w - 5) + "...";
+                }
+                ui->draw_text(preview_x + 1, 2 + (int)i, line, COLOR_TELESCOPE_PREVIEW_FG, COLOR_TELESCOPE_PREVIEW_BG);
+            }
         }
-        
-        ui->draw_text(x + 1, y + i + 1, display, fg, bg);
     }
 }
 

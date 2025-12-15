@@ -16,12 +16,11 @@ void Editor::update_pane_layout() {
     int h = ui->get_height();
     int w = ui->get_width();
     
-    int editor_x = show_explorer ? explorer_width : 0;
-    int editor_w = w - editor_x - (show_minimap ? minimap_width : 0);
+    int editor_w = w - (show_minimap ? minimap_width : 0);
     int editor_h = h - tab_height - status_height;
     
     if (!panes.empty()) {
-        panes[0].x = editor_x;
+        panes[0].x = 0;
         panes[0].y = tab_height;
         panes[0].w = editor_w;
         panes[0].h = editor_h;

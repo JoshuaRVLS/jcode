@@ -27,8 +27,22 @@ void Editor::handle_input(int ch, bool is_ctrl, bool is_shift) {
     
     if (ch == '\t' || ch == 9) {
         insert_char('\t');
-        explorer_focused = false;
         needs_redraw = true;
+        return;
+    }
+    
+    if (waiting_for_space_f) {
+        waiting_for_space_f = false;
+        if (ch == 'f' || ch == 'F') {
+            telescope.open();
+            needs_redraw = true;
+            return;
+        }
+        insert_char(' ');
+    }
+    
+    if (ch == ' ' && !is_ctrl && !is_shift && !telescope.is_active()) {
+        waiting_for_space_f = true;
         return;
     }
     
@@ -45,8 +59,6 @@ void Editor::handle_input(int ch, bool is_ctrl, bool is_shift) {
             running = false; return;
         } else if (ch == 'n' || ch == 'N') {
             create_new_buffer(); needs_redraw = true; return;
-        } else if (ch == 'o' || ch == 'O') {
-            toggle_explorer(); needs_redraw = true; return;
         } else if (ch == 'z' || ch == 'Z') {
             undo(); needs_redraw = true; return;
         } else if (ch == 'y' || ch == 'Y') {
@@ -113,12 +125,6 @@ void Editor::handle_input(int ch, bool is_ctrl, bool is_shift) {
     } else if (ch == 1001) {
         delete_char(true);
     } else if (ch == '\n' || ch == 13) {
-        if (explorer_focused && show_explorer && !show_command_palette && !show_search) {
-            explorer_open();
-            needs_redraw = true;
-            return;
-        }
-        
         auto& buf = get_buffer();
         if (buf.cursor.x > 0 && buf.cursor.x < (int)buf.lines[buf.cursor.y].length()) {
             char prev = buf.lines[buf.cursor.y][buf.cursor.x - 1];
@@ -145,14 +151,12 @@ void Editor::handle_input(int ch, bool is_ctrl, bool is_shift) {
                     buf.cursor.x = indent_str.length();
                     buf.modified = true;
                     needs_redraw = true;
-                    explorer_focused = false;
                     return;
                 }
             }
         }
         
         new_line();
-        explorer_focused = false;
     } else if (ch >= 32 && ch < 127) {
         auto& buf = get_buffer();
         if (AutoClose::is_closing_bracket(ch) && 
@@ -164,19 +168,6 @@ void Editor::handle_input(int ch, bool is_ctrl, bool is_shift) {
             }
         }
         insert_char(ch);
-        explorer_focused = false;
-    }
-    
-    if (show_explorer && !show_command_palette && !show_search) {
-        if (ch == 1008 || ch == 'k') {
-            explorer_up();
-            explorer_focused = true;
-            needs_redraw = true;
-        } else if (ch == 1009 || ch == 'j') {
-            explorer_down();
-            explorer_focused = true;
-            needs_redraw = true;
-        }
     }
 }
 
@@ -197,12 +188,14 @@ void Editor::handle_mouse(void* event_ptr) {
         return;
     }
     
-    if (event->x < pane.x || event->x >= pane.x + pane.w ||
-        event->y < pane.y || event->y >= pane.y + pane.h) {
+    auto& buf = get_buffer(pane.buffer_id);
+    
+    bool inside_pane = (event->x >= pane.x && event->x < pane.x + pane.w &&
+                        event->y >= pane.y && event->y < pane.y + pane.h);
+    
+    if (!inside_pane && !mouse_selecting && bstate != 3) {
         return;
     }
-    
-    auto& buf = get_buffer(pane.buffer_id);
     
     int rel_y = event->y - pane.y - 1;
     int rel_x = event->x - pane.x - 6;
@@ -221,6 +214,15 @@ void Editor::handle_mouse(void* event_ptr) {
     int line_len = buf.lines[click_y].length();
     if (click_x > line_len) {
         click_x = line_len;
+    }
+    
+    if (bstate == 3) {
+        show_context_menu = true;
+        context_menu_x = event->x;
+        context_menu_y = event->y;
+        context_menu_selected = 0;
+        needs_redraw = true;
+        return;
     }
     
     if (bstate == 1) {
@@ -263,14 +265,16 @@ void Editor::handle_mouse(void* event_ptr) {
             buf.cursor.x = click_x;
             buf.cursor.y = click_y;
             buf.selection.end = {click_x, click_y};
+            
+            if (buf.cursor.y < buf.scroll_offset) {
+                buf.scroll_offset = std::max(0, buf.cursor.y - 2);
+            }
+            if (buf.cursor.y >= buf.scroll_offset + pane.h - 2) {
+                buf.scroll_offset = buf.cursor.y - pane.h + 3;
+            }
+            
             needs_redraw = true;
         }
-    } else if (bstate == 3) {
-        show_context_menu = true;
-        context_menu_x = event->x;
-        context_menu_y = event->y;
-        context_menu_selected = 0;
-        needs_redraw = true;
     }
     
     clamp_cursor(pane.buffer_id);
@@ -309,6 +313,8 @@ void Editor::run() {
                 handle_command_palette(ch);
             } else if (show_search) {
                 handle_search_panel(ch);
+            } else if (telescope.is_active()) {
+                handle_telescope(ch);
             } else {
                 handle_input(ch, is_ctrl, is_shift);
             }
@@ -348,34 +354,50 @@ void Editor::run() {
                     }
                 }
             } else {
-                MEVENT mevent;
-                mevent.x = ev.mouse.x;
-                mevent.y = ev.mouse.y;
-                int bstate = 0;
+                int button = ev.mouse.button;
+                bool is_wheel = (button >= 64 && button <= 67);
                 
-                int button_code = ev.mouse.button & 0x03;
-                bool is_motion = (ev.mouse.button & 0x20) != 0;
-                
-                if (is_motion) {
-                    bstate = 32;
-                } else if (ev.mouse.pressed) {
-                    if (button_code == 0) {
-                        bstate = 1;
-                    } else if (button_code == 1 || button_code == 2) {
-                        bstate = 3;
-                    } else {
-                        bstate = 1;
+                if (is_wheel && !telescope.is_active() && !show_command_palette && !show_search) {
+                    auto& pane = get_pane();
+                    auto& buf = get_buffer(pane.buffer_id);
+                    
+                    if (button == 64 || button == 65) {
+                        buf.scroll_offset = std::max(0, buf.scroll_offset - 3);
+                    } else if (button == 66 || button == 67) {
+                        int max_scroll = std::max(0, (int)buf.lines.size() - pane.h + 2);
+                        buf.scroll_offset = std::min(max_scroll, buf.scroll_offset + 3);
                     }
-                } else if (ev.mouse.released) {
-                    if (button_code == 0) {
-                        bstate = 2;
-                    } else {
-                        bstate = 2;
+                    needs_redraw = true;
+                } else {
+                    MEVENT mevent;
+                    mevent.x = ev.mouse.x;
+                    mevent.y = ev.mouse.y;
+                    int bstate = 0;
+                    
+                    int button_code = ev.mouse.button & 0x03;
+                    bool is_motion = (ev.mouse.button & 0x20) != 0;
+                    
+                    if (is_motion) {
+                        bstate = 32;
+                    } else if (ev.mouse.pressed) {
+                        if (button_code == 0) {
+                            bstate = 1;
+                        } else if (button_code == 1 || button_code == 2) {
+                            bstate = 3;
+                        } else {
+                            bstate = 1;
+                        }
+                    } else if (ev.mouse.released) {
+                        if (button_code == 0) {
+                            bstate = 2;
+                        } else {
+                            bstate = 2;
+                        }
                     }
+                    
+                    mevent.bstate = bstate;
+                    handle_mouse(&mevent);
                 }
-                
-                mevent.bstate = bstate;
-                handle_mouse(&mevent);
             }
         }
     }

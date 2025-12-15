@@ -1,3 +1,4 @@
+
 #include "bracket.h"
 #include <stack>
 #include <map>
@@ -181,4 +182,6 @@ std::pair<int, int> BracketHighlighter::find_matching_bracket_near_cursor(
     
     return {-1, -1};
 }
+
+
 
